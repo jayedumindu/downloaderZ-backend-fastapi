@@ -270,39 +270,39 @@ async def download_with_http(url: str, filepath: pathlib.Path) -> None:
                 async for chunk in response.aiter_bytes():
                     f.write(chunk)
 
-async def download_with_subprocess(url: str, format: str, quality: str, filepath: pathlib.Path) -> None:
-    """Download using yt-dlp subprocess."""
-    cmd = [
-        "yt-dlp",
-        "--output", str(filepath.parent / "%(title)s.%(ext)s"),
-        "--quiet",
-        "--no-warnings",
-        "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-    ]
+# async def download_with_subprocess(url: str, format: str, quality: str, filepath: pathlib.Path) -> None:
+#     """Download using yt-dlp subprocess."""
+#     cmd = [
+#         "yt-dlp",
+#         "--output", str(filepath.parent / "%(title)s.%(ext)s"),
+#         "--quiet",
+#         "--no-warnings",
+#         "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+#     ]
     
-    if format in ["mp3", "wav", "m4a"]:
-        cmd.extend([
-            "--extract-audio",
-            "--audio-format", format,
-            "--audio-quality", quality.rstrip("K")
-        ])
-    else:
-        cmd.extend([
-            "--format", "bestvideo+bestaudio/best"
-        ])
+#     if format in ["mp3", "wav", "m4a"]:
+#         cmd.extend([
+#             "--extract-audio",
+#             "--audio-format", format,
+#             "--audio-quality", quality.rstrip("K")
+#         ])
+#     else:
+#         cmd.extend([
+#             "--format", "bestvideo+bestaudio/best"
+#         ])
     
-    cmd.append(url)
+#     cmd.append(url)
     
-    process = await asyncio.create_subprocess_exec(
-        *cmd,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE
-    )
+#     process = await asyncio.create_subprocess_exec(
+#         *cmd,
+#         stdout=asyncio.subprocess.PIPE,
+#         stderr=asyncio.subprocess.PIPE
+#     )
     
-    stdout, stderr = await process.communicate()
+#     stdout, stderr = await process.communicate()
     
-    if process.returncode != 0:
-        raise Exception(f"yt-dlp download failed: {stderr.decode()}")
+#     if process.returncode != 0:
+#         raise Exception(f"yt-dlp download failed: {stderr.decode()}")
 
 async def download_single_url(url: str, format: str, quality: str, download_dir: pathlib.Path, request: Request) -> dict:
     """Download a single URL using available methods."""
@@ -446,7 +446,13 @@ async def extract_media_info_with_subprocess(url: str) -> Dict[str, Any]:
             "--quiet",
             "--no-warnings",
             "--no-playlist",
+            "--ignore-errors",
+            "--no-check-certificate",
             "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            # Add these flags to handle age-restricted and other issues
+            "--age-limit", "0",  # Try to bypass age restrictions
+            "--extractor-retries", "3",
+            "--fragment-retries", "3",
             url
         ]
         
@@ -484,10 +490,142 @@ async def extract_media_info_with_subprocess(url: str) -> Dict[str, Any]:
                 "formats": formats
             }
         else:
-            raise Exception(f"yt-dlp failed: {stderr.decode()}")
+            error_msg = stderr.decode()
+            # Handle specific error cases
+            if "Sign in to confirm your age" in error_msg:
+                raise Exception("Age-restricted video: Cannot access without authentication")
+            elif "Video unavailable" in error_msg:
+                raise Exception("Video is unavailable or private")
+            elif "This video is not available" in error_msg:
+                raise Exception("Video not available in this region")
+            else:
+                raise Exception(f"yt-dlp extraction failed: {error_msg}")
     
+    except json.JSONDecodeError:
+        raise Exception("Failed to parse video information")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to extract info: {str(e)}")
+        if "Age-restricted" in str(e):
+            raise HTTPException(status_code=403, detail=str(e))
+        else:
+            raise HTTPException(status_code=500, detail=f"Failed to extract info: {str(e)}")
+
+
+async def download_with_subprocess(url: str, format: str, quality: str, filepath: pathlib.Path) -> None:
+    """Download using yt-dlp subprocess with improved error handling."""
+    cmd = [
+        "yt-dlp",
+        "--output", str(filepath.parent / "%(title)s.%(ext)s"),
+        "--quiet",
+        "--no-warnings",
+        "--ignore-errors",
+        "--no-check-certificate",
+        "--age-limit", "0",  # Try to bypass age restrictions
+        "--extractor-retries", "3",
+        "--fragment-retries", "3",
+        "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+    ]
+    
+    if format in ["mp3", "wav", "m4a"]:
+        cmd.extend([
+            "--extract-audio",
+            "--audio-format", format,
+            "--audio-quality", quality.rstrip("K")
+        ])
+    else:
+        cmd.extend([
+            "--format", "bestvideo+bestaudio/best"
+        ])
+    
+    cmd.append(url)
+    
+    process = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE
+    )
+    
+    stdout, stderr = await process.communicate()
+    
+    if process.returncode != 0:
+        error_msg = stderr.decode()
+        if "Sign in to confirm your age" in error_msg:
+            raise Exception("Age-restricted video: Cannot download without authentication")
+        elif "Video unavailable" in error_msg:
+            raise Exception("Video is unavailable or private")
+        else:
+            raise Exception(f"Download failed: {error_msg}")
+
+
+# Updated info endpoint with better error handling
+@app.post("/info")
+async def get_info(request: InfoRequest):
+    """Get media info for provided URLs."""
+    logging.info(f"Received /info request: {request.urls} type={request.type}")
+    results = []
+    
+    for url in request.urls:
+        try:
+            logging.info(f"Processing URL: {url}")
+            
+            # Use subprocess method for complex sites like YouTube
+            if await should_use_subprocess(url):
+                info = await extract_media_info_with_subprocess(url)
+            else:
+                # Try browser method for simpler sites, fallback to subprocess
+                if PLAYWRIGHT_AVAILABLE:
+                    try:
+                        info = await extract_media_info_with_playwright(url)
+                    except Exception as e:
+                        print(f"Browser extraction failed: {e}, trying subprocess")
+                        info = await extract_media_info_with_subprocess(url)
+                else:
+                    info = await extract_media_info_with_subprocess(url)
+            
+            # Filter formats based on type
+            filtered_formats = []
+            for f in info.get("formats", []):
+                ext = f.get("ext", "").lower()
+                acodec = (f.get("acodec") or "").lower()
+                vcodec = (f.get("vcodec") or "").lower()
+                
+                if ext not in SUPPORTED_FORMATS:
+                    continue
+                
+                if request.type == InfoType.audio and (not acodec or acodec == "none"):
+                    continue
+                if request.type == InfoType.video and (not vcodec or vcodec == "none"):
+                    continue
+                
+                filtered_formats.append(f)
+            
+            results.append({
+                "url": url,
+                "title": info.get("title"),
+                "thumbnail": info.get("thumbnail"),
+                "formats": filtered_formats
+            })
+            
+        except HTTPException as he:
+            # Handle HTTP exceptions (like 403 for age-restricted)
+            results.append({
+                "url": url,
+                "title": None,
+                "thumbnail": None,
+                "formats": [],
+                "error": he.detail,
+                "error_code": he.status_code
+            })
+        except Exception as e:
+            logging.error(f"Error processing {url}: {e}")
+            results.append({
+                "url": url,
+                "title": None,
+                "thumbnail": None,
+                "formats": [],
+                "error": str(e)
+            })
+    
+    return {"results": results}
 
 # Updated info endpoint
 @app.post("/info")
