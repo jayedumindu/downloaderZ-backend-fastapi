@@ -46,8 +46,7 @@ downloads_db = {}
 download_semaphore = asyncio.Semaphore(MAX_CONCURRENT_DOWNLOADS)
 
 app = FastAPI(title="Media Downloader API", version="1.0.0")
-app.mount("/files", StaticFiles(directory="public"), name="files")
-
+app.mount("/public", StaticFiles(directory="public"), name="public")
 logging.basicConfig(level=logging.INFO)
 
 # CORS middleware for NextJS frontend
