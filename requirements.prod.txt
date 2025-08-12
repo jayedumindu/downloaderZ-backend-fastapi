@@ -1,8 +1,5 @@
-fastapi
-uvicorn
-httpx
-pydantic
-python-multipart
-playwright
+fastapi 
+uvicorn 
+httpx 
+playwright 
 yt-dlp
-shutilwhich
