@@ -26,7 +26,7 @@ from fastapi.staticfiles import StaticFiles
 from enum import Enum
 
 # ---------- Configuration ----------
-MAX_FILE_SIZE_MB = 50  # Maximum file size in MB
+MAX_FILE_SIZE_MB = 100  # Maximum file size in MB
 MAX_CONCURRENT_DOWNLOADS = 3  # Limit concurrent downloads
 CLEANUP_INTERVAL_SECONDS = 60  # Clean up files after 1 minute
 SUPPORTED_FORMATS = ["mp3", "mp4", "wav", "m4a"]
