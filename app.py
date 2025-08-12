@@ -171,7 +171,7 @@ async def precheck_file_sizes(urls_with_formats):
                     return False, f"File '{info.get('title', url)}' estimated size {est_size_mb:.1f}MB exceeds the {MAX_FILE_SIZE_MB}MB limit."
     return True, None
 
-async def download_single_url(url: str, format: str, quality: str, download_dir: pathlib.Path) -> dict:
+async def download_single_url(url: str, format: str, quality: str, download_dir: pathlib.Path, request: Request) -> dict:    
     """Download a single URL and return file info, with pre-download size check."""
     async with download_semaphore:
         try:
@@ -256,8 +256,7 @@ async def download_single_url(url: str, format: str, quality: str, download_dir:
                     "title": title,
                     "filename": file_path.name,
                     "size_mb": round(file_size_mb, 2),
-                    "download_url": str(request.base_url) + f"files/{download_dir.name}/{file_path.name}",
-                    "status": "success"
+                    "download_url": str(request.base_url) + f"public/{download_dir.name}/{file_path.name}",                    "status": "success"
                 }
 
         except Exception as e:
@@ -271,7 +270,7 @@ async def download_single_url(url: str, format: str, quality: str, download_dir:
                  "error": str(e)
             }
 
-async def process_downloads(download_id: str, urls: List[str], format: str, quality: str):
+async def process_downloads(download_id: str, urls: List[str], format: str, quality: str, request: Request):
     """Process all downloads for a request."""
     download_dir = PUBLIC_DIR / download_id
     download_dir.mkdir(exist_ok=True)
@@ -284,7 +283,7 @@ async def process_downloads(download_id: str, urls: List[str], format: str, qual
     for i, url in enumerate(urls):
         downloads_db[download_id]["progress"] = f"Downloading {i+1}/{len(urls)}: {url[:50]}..."
         
-        file_info = await download_single_url(url, format, quality, download_dir)
+        file_info = await download_single_url(url, format, quality, download_dir, request)        
         files.append(file_info)
         
         downloads_db[download_id]["files"] = files
@@ -398,7 +397,7 @@ async def get_info(request: InfoRequest):
     return {"results": results}
 
 @app.post("/download", response_model=DownloadResponse)
-async def create_download(request: DownloadRequest, background_tasks: BackgroundTasks):
+async def create_download(request: DownloadRequest, background_tasks: BackgroundTasks, fastapi_request: Request):
     """Create a new download request."""
     try:
         # Pre-check all files
@@ -420,7 +419,8 @@ async def create_download(request: DownloadRequest, background_tasks: Background
             download_id, 
             request.urls, 
             request.format, 
-            request.quality or "192K"
+            request.quality or "192K",
+            fastapi_request
         )
         return DownloadResponse(
             download_id=download_id,
