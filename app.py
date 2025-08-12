@@ -39,7 +39,7 @@ MAX_URLS_PER_REQUEST = 5  # Limit URLs per request to save bandwidth
 PUBLIC_DIR = pathlib.Path("public")
 PUBLIC_DIR.mkdir(exist_ok=True)
 
-
+print("yt-dlp version:", yt_dlp.version.__version__)
 
 # Global storage for download tracking
 downloads_db = {}
