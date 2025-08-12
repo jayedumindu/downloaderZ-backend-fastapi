@@ -1,4 +1,8 @@
 fastapi
 uvicorn
 httpx
+pydantic
+python-multipart
 playwright
+yt-dlp
+shutilwhich
