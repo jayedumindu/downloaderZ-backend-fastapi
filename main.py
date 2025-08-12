@@ -496,6 +496,8 @@ async def download_single_url(url: str, format: str, quality: str, download_dir:
             raise Exception("All download methods failed")
             
         except Exception as e:
+            print(f"ERROR: {e}")
+
             return {
                 "url": url,
                 "title": "Failed",
