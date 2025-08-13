@@ -35,7 +35,7 @@ except ImportError:
     print("Warning: Playwright not available. Using subprocess method only.")
 
 # ---------- Configuration ----------
-MAX_FILE_SIZE_MB = 50
+MAX_FILE_SIZE_MB = 100
 MAX_CONCURRENT_DOWNLOADS = 3
 CLEANUP_INTERVAL_SECONDS = 300
 SUPPORTED_FORMATS = ["mp3", "mp4", "wav", "m4a"]
