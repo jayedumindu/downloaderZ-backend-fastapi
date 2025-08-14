@@ -15,3 +15,7 @@
 .youtube.com	TRUE	/	TRUE	0	YSC	sYpORC5RwsI
 .youtube.com	TRUE	/	TRUE	1770643930	VISITOR_INFO1_LIVE	Y3rMaS0VoFo
 .youtube.com	TRUE	/tv	TRUE	1787923930	__Secure-YT_DERP	CO744cZY
+.instagram.com	TRUE	/	TRUE	1789712082	csrftoken	Yz1ubNUTlnyg5u6u8Jq86iCfLOPP9d0Z
+.instagram.com	TRUE	/	TRUE	1789708863	mid	aJ1yPwALAAEBidURjstG5_aJk3zj
+.instagram.com	TRUE	/	TRUE	1786684863	ig_did	007BD479-846D-473C-A050-FC135EFEA27A
+.instagram.com	TRUE	/	TRUE	1786684863	ig_nrcb	1
