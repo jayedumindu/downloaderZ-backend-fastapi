@@ -195,43 +195,6 @@ def get_base_yt_dlp_cmd(use_cookies=True, use_proxy=False):
             cmd += ["--proxy", proxy]
     return cmd
 
-# ---------- Extraction ----------
-# async def extract_media_info_with_subprocess(url: str) -> Dict[str, Any]:
-#     try:
-#         cmd = get_base_yt_dlp_cmd(use_cookies=True, use_proxy=False)  # Explicitly no proxy
-#         cmd += ["--dump-json", "--no-download", url]
-#         process = await asyncio.create_subprocess_exec(
-#             *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-#         )
-#         stdout, stderr = await process.communicate()
-#         if process.returncode == 0:
-#             info = json.loads(stdout.decode())
-#             formats = [
-#                 {
-#                     k: f.get(k)
-#                     for k in [
-#                         'format_id', 'ext', 'format_note', 'filesize', 'acodec', 'vcodec',
-#                         'resolution', 'abr', 'fps', 'tbr', 'url'
-#                     ]
-#                 }
-#                 for f in info.get("formats", [])
-#                 if f.get("ext") in SUPPORTED_FORMATS and f.get("url")  # Only formats with direct CDN URL
-#             ]
-#             return {
-#                 "title": info.get("title", "Unknown"),
-#                 "thumbnail": info.get("thumbnail", ""),
-#                 "formats": formats
-#             }
-#         else:
-#             error_msg = stderr.decode().lower()
-#             if "login required" in error_msg:
-#                 return {"title": "Login Required", "formats": [], "error": "Instagram login required. Add cookies.", "error_type": "login_required"}
-#             if "private" in error_msg:
-#                 return {"title": "Private Content", "formats": [], "error": "Private Instagram content", "error_type": "private_content"}
-#             raise HTTPException(status_code=500, detail=f"yt-dlp error: {error_msg}")
-#     except Exception as e:
-#         raise HTTPException(status_code=500, detail=str(e))
-
 async def extract_media_info_with_subprocess(url: str) -> Dict[str, Any]:
     try:
         cmd = [
@@ -395,4 +358,3 @@ if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=int(os.getenv("PORT",8000)))
 
 
-#  uvicorn instagram_downloader:app --reload

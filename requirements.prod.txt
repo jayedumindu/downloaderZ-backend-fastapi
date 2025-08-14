@@ -1,5 +1,6 @@
 fastapi 
 uvicorn 
 httpx 
-playwright 
+playwright
+pydantic 
 yt-dlp
