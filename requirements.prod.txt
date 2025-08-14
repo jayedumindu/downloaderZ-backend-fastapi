@@ -2,5 +2,4 @@ fastapi
 uvicorn 
 httpx 
 playwright
-pydantic 
 yt-dlp
