@@ -1,0 +1,8 @@
+# Build
+docker build -t insta-downloader .
+
+# Run
+docker run -d -p 8000:8000 \
+  -v $(pwd)/public:/app/public \
+  -v $(pwd)/instagram_cookies.txt:/app/instagram_cookies.txt \
+  insta-downloader

@@ -1,9 +1,6 @@
-# fastapi
-# uvicorn
-# yt-dlp
-# pydantic
-# python-multipart
 fastapi
 uvicorn
+pydantic
 httpx
+yt-dlp
 playwright
