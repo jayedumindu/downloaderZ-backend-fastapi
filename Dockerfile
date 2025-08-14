@@ -45,6 +45,10 @@ COPY requirements.prod.txt .
 # Install Python dependencies
 RUN pip install --upgrade pip && pip install --no-cache-dir -r requirements.prod.txt
 
+# 🔹 Upgrade yt-dlp to latest/nightly to support new YouTube URL formats
+RUN pip install --no-cache-dir --upgrade --pre "yt-dlp[default]" && \
+    yt-dlp --version
+
 # Install Playwright browsers (chromium)
 RUN playwright install chromium
 
