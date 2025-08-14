@@ -435,69 +435,88 @@ async def should_use_subprocess(url: str) -> bool:
     ]
     return any(site in url.lower() for site in complex_sites)
 
-async def download_single_url(url: str, format: str, quality: str, download_dir: pathlib.Path, request: Request) -> dict:
-    """Download a single URL using available methods."""
+async def download_single_url(url: str, format: str, quality: str,
+                               download_dir: pathlib.Path,
+                               request: Request) -> dict:
+    """Download a single URL using available methods, with proper logging."""
+
     async with download_semaphore:
         try:
             # For complex sites, use subprocess method directly
             if await should_use_subprocess(url):
-                filename = f"download_{int(time.time())}.{format}"
-                filepath = download_dir / filename
-                
-                await download_with_subprocess(url, format, quality, filepath)
-                
-                # Find the actual downloaded file
-                downloaded_files = [f for f in download_dir.iterdir() if f.is_file() and f.name != filename]
-                if downloaded_files:
-                    actual_file = downloaded_files[0]
-                    return {
-                        "url": url,
-                        "title": actual_file.stem,
-                        "filename": actual_file.name,
-                        "size_mb": round(get_file_size_mb(actual_file), 2),
-                        "download_url": f"{request.base_url}public/{download_dir.name}/{actual_file.name}",
-                        "status": "success"
-                    }
-                
-                raise Exception("Downloaded file not found")
-            
-            # For simpler sites, try browser method first
+                temp_filename = f"download_{int(time.time())}.{format}"
+                temp_filepath = download_dir / temp_filename
+
+                await download_with_subprocess(url, format, quality, temp_filepath)
+
+                # Log all files in the directory after download
+                all_files = list(download_dir.glob("*"))
+                print(f"[DEBUG] Files in {download_dir} after download:")
+                for f in all_files:
+                    print(f" - {f} ({f.stat().st_size} bytes)")
+
+                # Try to pick the largest (final) file
+                if all_files:
+                    # Pick file that is not the temp placeholder
+                    final_file = max(
+                        [f for f in all_files if f.is_file() and f.name != temp_filename],
+                        key=lambda x: x.stat().st_size,
+                        default=None
+                    )
+
+                    if final_file:
+                        rel_path = final_file.relative_to(PUBLIC_DIR)  # relative inside /public
+                        download_url = f"{request.base_url}public/{rel_path}"
+                        print(f"[DEBUG] Serving download URL: {download_url}")
+
+                        return {
+                            "url": url,
+                            "title": final_file.stem,
+                            "filename": final_file.name,
+                            "size_mb": round(get_file_size_mb(final_file), 2),
+                            "download_url": download_url,
+                            "status": "success"
+                        }
+
+                raise Exception("Downloaded file not found in expected directory")
+
+            # For simpler sites (browser method first)
             elif PLAYWRIGHT_AVAILABLE:
                 try:
                     info = await extract_media_info_with_playwright(url)
                     title = info.get("title", "Unknown")
-                    
-                    # Find best matching format
-                    best_format = None
-                    for f in info.get("formats", []):
-                        if f.get("ext") == format:
-                            best_format = f
-                            break
-                    
+
+                    best_format = next(
+                        (f for f in info.get("formats", []) if f.get("ext") == format),
+                        None
+                    )
                     if best_format and best_format.get("url"):
-                        filename = f"{title}.{format}"
-                        filepath = download_dir / filename
-                        
+                        final_filename = f"{title}.{format}"
+                        filepath = download_dir / final_filename
                         await download_with_http(best_format["url"], filepath)
-                        
+
+                        print(f"[DEBUG] Saved file: {filepath} ({filepath.stat().st_size} bytes)")
+
+                        rel_path = filepath.relative_to(PUBLIC_DIR)
+                        download_url = f"{request.base_url}public/{rel_path}"
+                        print(f"[DEBUG] Serving download URL: {download_url}")
+
                         return {
                             "url": url,
                             "title": title,
-                            "filename": filename,
+                            "filename": final_filename,
                             "size_mb": round(get_file_size_mb(filepath), 2),
-                            "download_url": f"{request.base_url}public/{download_dir.name}/{filename}",
+                            "download_url": download_url,
                             "status": "success"
                         }
                 except Exception as e:
-                    print(f"Browser method failed for {url}: {e}")
-                    # Fallback to subprocess
+                    print(f"[WARN] Browser method failed for {url}: {e}")
                     await download_with_subprocess(url, format, quality, download_dir / f"fallback.{format}")
-            
-            raise Exception("All download methods failed")
-            
-        except Exception as e:
-            print(f"ERROR: {e}")
 
+            raise Exception("All download methods failed")
+
+        except Exception as e:
+            print(f"[ERROR] Download failed: {e}")
             return {
                 "url": url,
                 "title": "Failed",
