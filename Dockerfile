@@ -40,6 +40,10 @@ WORKDIR /app
 
 # Copy requirements and install them
 COPY requirements.txt .
+
+# Copy cookies during build (if you have them)
+COPY instagram_cookies.txt /app/
+
 RUN pip install --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 

@@ -174,51 +174,101 @@ def cleanup_old_files():
 
 # ---------- yt-dlp command for Instagram ----------
 def get_base_yt_dlp_cmd(use_cookies=True, use_proxy=False):
+    """Build yt-dlp command with comprehensive anti-detection for Instagram."""
     cmd = [
         "yt-dlp",
         "--quiet",
         "--no-warnings",
         "--ignore-errors",
+        # Essential anti-detection headers
         "--user-agent", get_random_user_agent(),
-        "--sleep-interval", str(random.randint(2, 6)),
-        "--throttled-rate", "300K",
-        "--extractor-retries", "3",
-        "--fragment-retries", "3",
+        "--add-header", "Accept:text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+        "--add-header", "Accept-Language:en-US,en;q=0.5",
+        "--add-header", "Accept-Encoding:gzip, deflate",
+        "--add-header", "Connection:keep-alive",
+        "--add-header", "Upgrade-Insecure-Requests:1",
+        # Rate limiting (crucial for Instagram)
+        "--sleep-interval", str(random.randint(3, 8)),
+        "--max-sleep-interval", str(random.randint(10, 20)),
+        "--throttled-rate", "200K",  # Lower rate for Instagram
+        # Enhanced retry logic
+        "--extractor-retries", "5",
+        "--fragment-retries", "5",
+        "--file-access-retries", "3",
+        "--socket-timeout", "30",
+        # Network optimizations
         "--no-check-certificate",
-        "-f", "best"
+        "--prefer-insecure",
+        "--concurrent-fragments", "1",  # Single thread for Instagram
+        # Format selection
+        "-f", "best[height<=1080]/best"
     ]
+    
+    # Cookies are CRITICAL for Instagram
     if use_cookies and COOKIES_FILE.exists():
-        cmd += ["--cookies", str(COOKIES_FILE)]
-    if use_proxy:
+        cmd.extend(["--cookies", str(COOKIES_FILE)])
+        print("[INFO] ✅ Using Instagram cookies")
+        
+        # Verify cookies file has content
+        try:
+            with open(COOKIES_FILE, 'r') as f:
+                content = f.read().strip()
+                if not content or len(content) < 100:
+                    print("[WARNING] ⚠️ Cookies file seems empty or too small")
+                else:
+                    print(f"[INFO] Cookies file size: {len(content)} chars")
+        except Exception as e:
+            print(f"[ERROR] Cannot read cookies file: {e}")
+    else:
+        print("[WARNING] ⚠️ No Instagram cookies - WILL LIKELY FAIL in production")
+    
+    # Proxy rotation for production
+    if use_proxy and proxy_list:
         proxy = get_next_proxy()
         if proxy:
-            cmd += ["--proxy", proxy]
+            cmd.extend(["--proxy", proxy])
+            print(f"[INFO] Using proxy: {proxy}")
+    elif use_proxy:
+        print("[WARNING] ⚠️ No proxies available")
+    
     return cmd
 
 async def extract_media_info_with_subprocess(url: str) -> Dict[str, Any]:
+    """Extract Instagram media info using anti-detection measures."""
     try:
-        cmd = [
-            "yt-dlp",
+        # USE YOUR SOPHISTICATED COMMAND BUILDER (this was missing!)
+        cmd = get_base_yt_dlp_cmd(use_cookies=True, use_proxy=True)
+        cmd.extend([
             "--dump-json",
             "--no-download",
+            "--no-playlist",
+            # Instagram-specific optimizations
+            "--sleep-requests", str(random.randint(1, 3)),
+            "--sleep-subtitles", str(random.randint(1, 2)),
             url
-        ]
+        ])
+        
+        print(f"[DEBUG] Using command: {' '.join(cmd)}")
+        
         process = await asyncio.create_subprocess_exec(
-            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+            *cmd, 
+            stdout=asyncio.subprocess.PIPE, 
+            stderr=asyncio.subprocess.PIPE
         )
+        
         stdout, stderr = await process.communicate()
+        
         if process.returncode == 0:
             info = json.loads(stdout.decode())
-            print("Decoded:", info)
+            print(f"[SUCCESS] Extracted: {info.get('title', 'Unknown')}")
 
-            # Combine formats from 'formats' and 'requested_formats' if present
+            # Your existing format processing code...
             all_formats = []
             if "formats" in info:
                 all_formats.extend(info["formats"])
             if "requested_formats" in info and isinstance(info["requested_formats"], list):
                 all_formats.extend(info["requested_formats"])
 
-            # Deduplicate by URL
             seen_resolutions = set()
             unique_formats = []
             for f in all_formats:
@@ -246,15 +296,35 @@ async def extract_media_info_with_subprocess(url: str) -> Dict[str, Any]:
                 "formats": unique_formats
             }
         else:
-            error_msg = stderr.decode().lower()
-            if "login required" in error_msg:
-                return {"title": "Login Required", "formats": [], "error": "Instagram login required. Add cookies.", "error_type": "login_required"}
-            if "private" in error_msg:
-                return {"title": "Private Content", "formats": [], "error": "Private Instagram content", "error_type": "private_content"}
-            raise HTTPException(status_code=500, detail=f"yt-dlp error: {error_msg}")
+            error_msg = stderr.decode()
+            print(f"[ERROR] yt-dlp failed: {error_msg}")
+            
+            # Enhanced error handling for production
+            error_lower = error_msg.lower()
+            if any(phrase in error_lower for phrase in ["login required", "sign in", "authentication", "private account"]):
+                return {
+                    "title": "Login Required",
+                    "formats": [],
+                    "error": "Instagram login required. Cookies may be expired or invalid.",
+                    "error_type": "login_required"
+                }
+            elif "429" in error_msg or "rate limit" in error_lower or "too many requests" in error_lower:
+                return {
+                    "title": "Rate Limited",
+                    "formats": [],
+                    "error": "Instagram rate limiting. Try again later or use different proxy.",
+                    "error_type": "rate_limited"
+                }
+            else:
+                raise HTTPException(status_code=500, detail=f"yt-dlp error: {error_msg}")
+                
+    except json.JSONDecodeError as e:
+        print(f"[ERROR] JSON parsing failed: {e}")
+        raise HTTPException(status_code=500, detail="Failed to parse media information")
     except Exception as e:
-        print("Exception in extract_media_info_with_subprocess:", e)
+        print(f"[ERROR] Exception: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 # ---------- Download ----------
 async def download_with_subprocess(url: str, fmt: str, quality: str, filepath: pathlib.Path):
