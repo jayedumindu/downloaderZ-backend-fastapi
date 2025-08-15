@@ -130,17 +130,51 @@ class ProxyConfig(BaseModel):
     rotation_enabled: bool = True
 
 # ---------- Proxy Utils ----------
+def _normalize_proxy(line: str) -> Optional[str]:
+    """Normalize a proxy line to a valid URL expected by yt-dlp.
+    Accepts:
+      - full URL forms: http(s)://host:port, socks5://host:port, socks4://host:port
+      - host:port (assumes http)
+    Rejects lines containing spaces or missing port.
+    """
+    line = line.strip()
+    if not line or " " in line:
+        return None
+    try:
+        # If scheme is present, validate
+        from urllib.parse import urlparse
+        parsed = urlparse(line)
+        if parsed.scheme and parsed.netloc and parsed.port:
+            return line
+        # If no scheme, try host:port
+        if ":" in line and line.count(":") == 1:
+            host, port = line.split(":", 1)
+            if host and port.isdigit():
+                return f"http://{host}:{port}"
+    except Exception:
+        return None
+    return None
+
 def load_proxies():
     global proxy_list
+    proxy_list = []
     if PROXY_LIST_FILE.exists():
         try:
+            valid = []
             with open(PROXY_LIST_FILE, 'r') as f:
-                proxy_list = [line.strip() for line in f if line.strip() and not line.startswith('#')]
-            print(f"✅ Loaded {len(proxy_list)} proxies")
+                for raw in f:
+                    raw = raw.strip()
+                    if not raw or raw.startswith('#'):
+                        continue
+                    normalized = _normalize_proxy(raw)
+                    if normalized:
+                        valid.append(normalized)
+                    else:
+                        print(f"[WARN] Skipping invalid proxy line: {raw}")
+            proxy_list = valid
+            print(f"✅ Loaded {len(proxy_list)} valid proxies")
         except Exception as e:
             print(f"⚠️ Error loading proxies: {e}")
-    else:
-        proxy_list = []
 
 def get_next_proxy():
     global current_proxy_index
@@ -229,15 +263,16 @@ def get_base_yt_dlp_cmd(use_cookies=True, use_proxy=False):
             cmd.extend(["--proxy", proxy])
             print(f"[INFO] Using proxy: {proxy}")
     elif use_proxy:
-        print("[WARNING] ⚠️ No proxies available")
+        print("[WARNING] ⚠️ No proxies available after validation")
     
     return cmd
 
 async def extract_media_info_with_subprocess(url: str) -> Dict[str, Any]:
     """Extract Instagram media info using anti-detection measures."""
     try:
-        # USE YOUR SOPHISTICATED COMMAND BUILDER (this was missing!)
-        cmd = get_base_yt_dlp_cmd(use_cookies=True, use_proxy=True)
+        # Only use proxy if explicitly enabled via env
+        use_proxy = os.getenv("USE_PROXY_FOR_INSTAGRAM", "false").lower() == "true"
+        cmd = get_base_yt_dlp_cmd(use_cookies=True, use_proxy=use_proxy)
         cmd.extend([
             "--dump-json",
             "--no-download",
@@ -328,7 +363,8 @@ async def extract_media_info_with_subprocess(url: str) -> Dict[str, Any]:
 
 # ---------- Download ----------
 async def download_with_subprocess(url: str, fmt: str, quality: str, filepath: pathlib.Path):
-    cmd = get_base_yt_dlp_cmd()
+    use_proxy = os.getenv("USE_PROXY_FOR_INSTAGRAM", "false").lower() == "true"
+    cmd = get_base_yt_dlp_cmd(use_cookies=True, use_proxy=use_proxy)
     cmd += ["--output", str(filepath.parent / "%(title)s.%(ext)s")]
     if fmt == "mp3":
         cmd += ["--extract-audio", "--audio-format", "mp3", "--audio-quality", quality.rstrip("K")]
