@@ -49,6 +49,47 @@ COOKIES_FILE = pathlib.Path("youtube_cookies.txt")
 downloads_db = {}
 download_semaphore = asyncio.Semaphore(MAX_CONCURRENT_DOWNLOADS)
 
+def sanitize_filename(filename: str) -> str:
+    """Sanitize filename by removing/replacing problematic characters."""
+    import re
+    # Remove or replace problematic characters
+    filename = re.sub(r'[<>:"/\\|?*]', '', filename)  # Remove invalid filename chars
+    filename = re.sub(r'\s+', '_', filename)  # Replace spaces with underscores
+    filename = re.sub(r'[^\w\-_.]', '', filename)  # Keep only alphanumeric, hyphens, underscores, dots
+    filename = filename.strip('._')  # Remove leading/trailing dots and underscores
+    return filename or "download"  # Fallback if empty
+
+def get_base_url(request: Request) -> str:
+    """Get the correct base URL for the environment."""
+    # Allow manual override via environment variable
+    if os.environ.get('FORCE_HTTPS') == 'true':
+        host = request.headers.get('x-forwarded-host') or request.headers.get('host', 'localhost')
+        return f"https://{host}/"
+    
+    # Check if we're in production (Railway, Heroku, etc.)
+    # These platforms typically set specific environment variables
+    is_production = any([
+        os.environ.get('RAILWAY_ENVIRONMENT') == 'production',
+        os.environ.get('HEROKU_APP_NAME'),
+        os.environ.get('DYNO'),  # Heroku
+        os.environ.get('PORT'),  # Common in cloud platforms
+        request.headers.get('x-forwarded-proto') == 'https',
+        request.headers.get('x-forwarded-port') == '443'
+    ])
+    
+    # Check for HTTPS headers that proxies set
+    forwarded_proto = request.headers.get('x-forwarded-proto')
+    forwarded_host = request.headers.get('x-forwarded-host')
+    forwarded_port = request.headers.get('x-forwarded-port')
+    
+    if forwarded_proto == 'https' or (is_production and not forwarded_proto):
+        # Use HTTPS in production
+        host = forwarded_host or request.headers.get('host', 'localhost')
+        return f"https://{host}/"
+    else:
+        # Use the original base_url for development
+        return str(request.base_url)
+
 app = FastAPI(title="Cookie-Enabled Media Downloader API", version="2.1.0")
 app.mount("/public", StaticFiles(directory="public"), name="public")
 logging.basicConfig(level=logging.INFO)
@@ -465,13 +506,30 @@ async def download_single_url(url: str, format: str, quality: str,
                     )
 
                     if final_file:
+                        # Sanitize the filename
+                        original_name = final_file.stem
+                        sanitized_name = sanitize_filename(original_name)
+                        new_filename = f"{sanitized_name}.{final_file.suffix}"
+                        new_filepath = final_file.parent / new_filename
+                        
+                        # Rename the file if the name is different
+                        if final_file.name != new_filename:
+                            try:
+                                final_file.rename(new_filepath)
+                                final_file = new_filepath
+                                print(f"[DEBUG] Renamed file from {original_name} to {sanitized_name}")
+                            except Exception as e:
+                                print(f"[WARN] Could not rename file: {e}")
+                                # Continue with original filename
+                        
                         rel_path = final_file.relative_to(PUBLIC_DIR)  # relative inside /public
-                        download_url = f"{request.base_url}public/{rel_path}"
+                        base_url = get_base_url(request)
+                        download_url = f"{base_url}public/{rel_path}"
                         print(f"[DEBUG] Serving download URL: {download_url}")
 
                         return {
                             "url": url,
-                            "title": final_file.stem,
+                            "title": sanitized_name,
                             "filename": final_file.name,
                             "size_mb": round(get_file_size_mb(final_file), 2),
                             "download_url": download_url,
@@ -498,7 +556,8 @@ async def download_single_url(url: str, format: str, quality: str,
                         print(f"[DEBUG] Saved file: {filepath} ({filepath.stat().st_size} bytes)")
 
                         rel_path = filepath.relative_to(PUBLIC_DIR)
-                        download_url = f"{request.base_url}public/{rel_path}"
+                        base_url = get_base_url(request)
+                        download_url = f"{base_url}public/{rel_path}"
                         print(f"[DEBUG] Serving download URL: {download_url}")
 
                         return {
