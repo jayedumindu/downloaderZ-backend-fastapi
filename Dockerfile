@@ -41,6 +41,8 @@ WORKDIR /app
 
 # Copy requirements first (for caching)
 COPY requirements.prod.txt .
+COPY working_proxies.txt .
+COPY youtube_cookies.txt .
 
 # Install Python dependencies
 RUN pip install --upgrade pip && pip install --no-cache-dir -r requirements.prod.txt
@@ -59,4 +61,4 @@ COPY . .
 EXPOSE 8000
 
 # Run the app with uvicorn
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "proxies:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -1,0 +1,19 @@
+curl -x socks5h://vgpcpwcs-rotate:2ixrl6s4md0r@p.webshare.io:1080 https://www.youtube.com
+
+80
+
+vgpcpwcs-rotate
+
+2ixrl6s4md0r
+
+p.webshare.io
+
+curl -x socks5h://vgpcpwcs-1:2ixrl6s4md0r@p.webshare.io:1080 http://httpbin.org/ip
+
+
+(base) Mac:~ jayedumindu$ curl -x socks5h://vgpcpwcs-1:2ixrl6s4md0r@p.webshare.io:80 http://httpbin.org/ip
+{
+  "origin": "14.192.131.100"
+}
+
+uvicorn proxies:app --reload --host 0.0.0.0 --port 8000
